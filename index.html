@@ -1,1 +1,776 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Clash Arena Tactical Defense</title>
+    <!-- Tailwind CSS for UI layout -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;600;800&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(circle at center, #1b263b, #0d1b2a);
+            color: #ffffff;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .cinzel-font {
+            font-family: 'Cinzel', serif;
+        }
+
+        /* Canvas styling optimized for mobile aspect ratio */
+        #gameCanvas {
+            background: #2d6a4f;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.7), inset 0 0 50px rgba(0,0,0,0.4);
+            border-radius: 1rem;
+            cursor: pointer;
+            touch-action: none;
+        }
+
+        /* Card styles with fantasy borders and glowing highlights */
+        .card-slot {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.2);
+        }
+        .card-slot:hover:not(.disabled) {
+            transform: translateY(-6px) scale(1.03);
+            box-shadow: 0 12px 24px rgba(59, 130, 246, 0.4);
+            border-color: #60a5fa !important;
+        }
+        .card-slot.selected {
+            transform: translateY(-10px) scale(1.08);
+            border-color: #facc15 !important;
+            box-shadow: 0 0 25px rgba(250, 204, 21, 0.8);
+        }
+        .card-slot.disabled {
+            filter: grayscale(80%) brightness(50%);
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        /* Custom Elixir fluid bar animation */
+        @keyframes elixirGlow {
+            0% { filter: drop-shadow(0 0 2px #d946ef); }
+            50% { filter: drop-shadow(0 0 8px #ec4899); }
+            100% { filter: drop-shadow(0 0 2px #d946ef); }
+        }
+        .elixir-glow {
+            animation: elixirGlow 2s infinite ease-in-out;
+        }
+
+        /* UI Overlays */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        /* Pulse badge */
+        @keyframes pulseAlert {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.05); }
+        }
+        .alert-pulse {
+            animation: pulseAlert 1.5s infinite;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col items-center justify-between p-2 sm:p-4 overflow-hidden">
+
+    <header class="w-full max-w-md flex justify-between items-center px-4 py-2 glass-panel rounded-2xl shadow-xl z-10">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center border border-amber-200 shadow-md">
+                <span class="text-slate-900 font-extrabold text-xs cinzel-font">👑</span>
+            </div>
+            <div>
+                <h1 class="text-xs font-bold text-amber-400 cinzel-font tracking-wide">ShadowRex</h1>
+                <p class="text-[10px] text-slate-400">Trophy Arena</p>
+            </div>
+        </div>
+        
+        <div class="flex flex-col items-center">
+            <div id="matchStatus" class="text-xs font-extrabold tracking-wider text-emerald-400 uppercase alert-pulse">Battle Active</div>
+            <div id="gameTimer" class="text-lg font-black tracking-widest text-white cinzel-font">3:00</div>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <div class="text-right">
+                <p class="text-[10px] text-slate-400">Trophies</p>
+                <p class="text-xs font-bold text-amber-300 cinzel-font">4500</p>
+            </div>
+            <button id="soundToggleBtn" onclick="toggleSound()" class="w-8 h-8 rounded-full glass-panel flex items-center justify-center text-sm hover:bg-slate-700 transition">🔊</button>
+        </div>
+    </header>
+
+    <main class="relative w-full max-w-md flex-grow flex items-center justify-center my-1">
+        <div class="relative w-full h-full flex items-center justify-center">
+            <canvas id="gameCanvas" width="480" height="720" class="w-full h-auto max-h-[68vh] object-contain"></canvas>
+            
+            <!-- Floating Deployment Warning / Notifications -->
+            <div id="deploymentWarning" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-0 transition-opacity duration-300 bg-red-600/90 text-white px-4 py-2 rounded-xl font-extrabold text-sm shadow-2xl border border-red-400 cinzel-font">
+                Cannot place troop here!
+            </div>
+        </div>
+    </main>
+
+    <footer class="w-full max-w-md flex flex-col gap-2 glass-panel p-3 rounded-2xl shadow-2xl z-10">
+        <!-- Elixir Gauge -->
+        <div class="flex items-center gap-3">
+            <div class="relative flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-tr from-fuchsia-600 to-pink-500 shadow-lg border-2 border-pink-300 elixir-glow">
+                <span class="text-white font-black text-sm cinzel-font" id="elixirNumber">5</span>
+            </div>
+            <div class="flex-grow bg-slate-900/90 h-4 rounded-full overflow-hidden p-0.5 border border-slate-700 relative shadow-inner">
+                <div id="elixirBarFill" class="h-full bg-gradient-to-r from-fuchsia-600 via-purple-500 to-pink-400 rounded-full transition-all duration-100" style="width: 50%;"></div>
+                <div class="absolute inset-0 flex justify-around items-center pointer-events-none">
+                    <div class="w-px h-full bg-slate-700/50"></div>
+                    <div class="w-px h-full bg-slate-700/50"></div>
+                    <div class="w-px h-full bg-slate-700/50"></div>
+                    <div class="w-px h-full bg-slate-700/50"></div>
+                    <div class="w-px h-full bg-slate-700/50"></div>
+                    <div class="w-px h-full bg-slate-700/50"></div>
+                    <div class="w-px h-full bg-slate-700/50"></div>
+                    <div class="w-px h-full bg-slate-700/50"></div>
+                    <div class="w-px h-full bg-slate-700/50"></div>
+                </div>
+            </div>
+            <span class="text-xs font-bold text-fuchsia-300 w-8 text-right" id="elixirMax">10</span>
+        </div>
+
+        <!-- 4 Battle Cards Hand -->
+        <div id="cardsHand" class="grid grid-cols-4 gap-2">
+            <!-- Cards will be populated dynamically -->
+        </div>
+    </footer>
+
+    <div id="gameOverModal" class="fixed inset-0 bg-black/80 backdrop-blur-md hidden items-center justify-center z-50 p-4">
+        <div class="glass-panel p-6 rounded-3xl max-w-sm w-full text-center flex flex-col items-center border border-amber-500/40 shadow-2xl">
+            <div id="modalCrownIcon" class="text-5xl mb-2">👑</div>
+            <h2 id="modalTitle" class="text-2xl font-black cinzel-font text-amber-400 mb-1">VICTORY!</h2>
+            <p id="modalSubtitle" class="text-sm text-slate-300 mb-6">You destroyed the enemy King Tower!</p>
+            
+            <div class="grid grid-cols-2 gap-4 w-full mb-6 text-slate-300 text-xs">
+                <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
+                    <p class="text-slate-400">Crowns</p>
+                    <p id="modalCrowns" class="text-lg font-bold text-amber-300">3 - 0</p>
+                </div>
+                <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
+                    <p class="text-slate-400">Reward</p>
+                    <p class="text-lg font-bold text-emerald-400">+32 🏆</p>
+                </div>
+            </div>
+
+            <button onclick="resetGame()" class="w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black rounded-xl cinzel-font tracking-wider shadow-lg transition transform hover:scale-105">
+                BATTLE AGAIN
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Audio Synthesizer for sound effects without external assets
+        let soundEnabled = true;
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(type) {
+            if (!soundEnabled || !audioCtx) return;
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            const now = audioCtx.currentTime;
+
+            if (type === 'deploy') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.exponentialRampToValueAtTime(600, now + 0.15);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.15);
+                osc.start(now);
+                osc.stop(now + 0.15);
+            } else if (type === 'hit') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(120, now);
+                osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
+                gain.gain.setValueAtTime(0.4, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now);
+                osc.stop(now + 0.1);
+            } else if (type === 'spell') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(600, now);
+                osc.frequency.exponentialRampToValueAtTime(200, now + 0.3);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            } else if (type === 'victory') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(440, now);
+                osc.frequency.setValueAtTime(554, now + 0.1);
+                osc.frequency.setValueAtTime(659, now + 0.2);
+                osc.frequency.setValueAtTime(880, now + 0.3);
+                gain.gain.setValueAtTime(0.4, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.8);
+                osc.start(now);
+                osc.stop(now + 0.8);
+            }
+        }
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            document.getElementById('soundToggleBtn').textContent = soundEnabled ? '🔊' : '🔇';
+        }
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const CARDS_DATA = [
+            { id: 'emberblade', name: 'Emberblade', cost: 3, hp: 600, atk: 75, speed: 1.8, range: 35, type: 'melee', color: '#ef4444', icon: '🔥', desc: 'Fiery melee fighter' },
+            { id: 'skyfang', name: 'Skyfang', cost: 2, hp: 350, atk: 60, speed: 2.2, range: 120, type: 'ranged_air', color: '#38bdf8', icon: '🦅', desc: 'Fast flying archer' },
+            { id: 'ironwarden', name: 'Ironwarden', cost: 4, hp: 1400, atk: 90, speed: 1.0, range: 40, type: 'tank', color: '#94a3b8', icon: '🛡️', desc: 'Heavy tank beast' },
+            { id: 'stormling', name: 'Stormling', cost: 1, hp: 200, atk: 50, speed: 2.5, range: 90, type: 'ranged', color: '#a855f7', icon: '⚡', desc: 'Fast lightning striker' }
+        ];
+
+        let gameState = {
+            elixir: 5,
+            maxElixir: 10,
+            elixirRegenRate: 0.35, // per second
+            timeLeft: 180, // 3 minutes
+            selectedCardIndex: null,
+            playerCrowns: 0,
+            enemyCrowns: 0,
+            gameOver: false
+        };
+
+        // Entities arrays
+        let troops = [];
+        let towers = [];
+        let projectiles = [];
+        let particles = [];
+        let floatingTexts = [];
+
+        function initTowers() {
+            towers = [
+                // Player Towers (Bottom Half: y > 360)
+                { id: 'p_king', team: 'player', type: 'king', x: 240, y: 640, maxHp: 4500, hp: 4500, radius: 36, range: 160, atk: 120, atkSpeed: 1.2, lastShot: 0, alive: true },
+                { id: 'p_left', team: 'player', type: 'princess', x: 120, y: 530, maxHp: 3200, hp: 3200, radius: 28, range: 150, atk: 90, atkSpeed: 0.9, lastShot: 0, alive: true },
+                { id: 'p_right', team: 'player', type: 'princess', x: 360, y: 530, maxHp: 3200, hp: 3200, radius: 28, range: 150, atk: 90, atkSpeed: 0.9, lastShot: 0, alive: true },
+
+                // Enemy Towers (Top Half: y < 360)
+                { id: 'e_king', team: 'enemy', type: 'king', x: 240, y: 80, maxHp: 4500, hp: 4500, radius: 36, range: 160, atk: 120, atkSpeed: 1.2, lastShot: 0, alive: true },
+                { id: 'e_left', team: 'enemy', type: 'princess', x: 120, y: 190, maxHp: 3200, hp: 3200, radius: 28, range: 150, atk: 90, atkSpeed: 0.9, lastShot: 0, alive: true },
+                { id: 'e_right', team: 'enemy', type: 'princess', x: 360, y: 190, maxHp: 3200, hp: 3200, radius: 28, range: 150, atk: 90, atkSpeed: 0.9, lastShot: 0, alive: true }
+            ];
+        }
+
+        // Render Cards UI
+        function renderCardsUI() {
+            const container = document.getElementById('cardsHand');
+            container.innerHTML = '';
+            CARDS_DATA.forEach((card, index) => {
+                const isSelected = gameState.selectedCardIndex === index;
+                const canAfford = gameState.elixir >= card.cost;
+                container.innerHTML += `
+                    <div onclick="selectCard(${index})" class="card-slot flex flex-col items-center justify-between p-2 rounded-xl border-2 ${isSelected ? 'selected border-yellow-400' : 'border-slate-700'} ${canAfford ? 'cursor-pointer' : 'disabled'}">
+                        <div class="flex justify-between w-full items-center">
+                            <span class="text-xs">${card.icon}</span>
+                            <span class="text-[10px] bg-fuchsia-600/80 px-1.5 py-0.5 rounded-full font-black text-white">${card.cost} 💜</span>
+                        </div>
+                        <div class="text-center my-1">
+                            <p class="text-xs font-bold text-white tracking-tight">${card.name}</p>
+                            <p class="text-[9px] text-slate-400">${card.desc}</p>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function selectCard(index) {
+            if (gameState.gameOver) return;
+            if (gameState.elixir < CARDS_DATA[index].cost) {
+                showWarning("Not enough Elixir!");
+                return;
+            }
+            if (gameState.selectedCardIndex === index) {
+                gameState.selectedCardIndex = null;
+            } else {
+                gameState.selectedCardIndex = index;
+                playSound('deploy');
+            }
+            renderCardsUI();
+        }
+
+        function showWarning(text) {
+            const warning = document.getElementById('deploymentWarning');
+            warning.textContent = text;
+            warning.style.opacity = '1';
+            setTimeout(() => {
+                warning.style.opacity = '0';
+            }, 1200);
+        }
+
+        canvas.addEventListener('click', (e) => {
+            if (gameState.gameOver || gameState.selectedCardIndex === null) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const clickX = (e.clientX - rect.left) * scaleX;
+            const clickY = (e.clientY - rect.top) * scaleY;
+
+            // Restrict player deployment to bottom half of the arena (y > 360, with safety buffer near river y:330-390)
+            if (clickY < 380) {
+                showWarning("You can only deploy troops in your territory!");
+                return;
+            }
+
+            // Check if player has enough elixir
+            const card = CARDS_DATA[gameState.selectedCardIndex];
+            if (gameState.elixir < card.cost) {
+                showWarning("Not enough Elixir!");
+                return;
+            }
+
+            // Deduct Elixir
+            gameState.elixir -= card.cost;
+            document.getElementById('elixirNumber').style.transform = 'scale(1.2)';
+            setTimeout(() => document.getElementById('elixirNumber').style.transform = 'scale(1)', 200);
+
+            // Spawn player troop
+            spawnTroop(card, 'player', clickX, clickY);
+
+            // Reset selection
+            gameState.selectedCardIndex = null;
+            renderCardsUI();
+        });
+
+        function spawnTroop(card, team, x, y) {
+            troops.push({
+                id: Math.random().toString(36).substring(2, 9),
+                cardId: card.id,
+                name: card.name,
+                team: team, // 'player' or 'enemy'
+                x: x,
+                y: y,
+                maxHp: card.hp,
+                hp: card.hp,
+                atk: card.atk,
+                speed: card.speed,
+                range: card.range,
+                type: card.type,
+                color: card.color,
+                icon: card.icon,
+                radius: 16,
+                lastAtk: 0,
+                targetId: null
+            });
+
+            // Spawn particles
+            for (let i = 0; i < 8; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4,
+                    color: card.color,
+                    alpha: 1,
+                    size: Math.random() * 4 + 2
+                });
+            }
+            playSound('spell');
+        }
+
+        let aiSpawnTimer = 0;
+        function updateAI(dt) {
+            aiSpawnTimer += dt;
+            if (aiSpawnTimer >= 4.0 && !gameState.gameOver) {
+                aiSpawnTimer = 0;
+                // Pick random enemy card
+                const randomCard = CARDS_DATA[Math.floor(Math.random() * CARDS_DATA.length)];
+                // Choose lane or center in enemy territory (y: 120-280, x: 120-360)
+                const targetX = Math.random() > 0.5 ? 140 : 340;
+                const targetY = 220 + Math.random() * 60;
+                spawnTroop(randomCard, 'enemy', targetX, targetY);
+            }
+        }
+
+        let lastTime = performance.now();
+
+        function gameLoop(now) {
+            const dt = (now - lastTime) / 1000;
+            lastTime = now;
+
+            if (!gameState.gameOver) {
+                // Regen Elixir
+                if (gameState.elixir < gameState.maxElixir) {
+                    gameState.elixir = Math.min(gameState.maxElixir, gameState.elixir + gameState.elixirRegenRate * dt);
+                    const pct = (gameState.elixir / gameState.maxElixir) * 100;
+                    document.getElementById('elixirBarFill').style.width = `${pct}%`;
+                    document.getElementById('elixirNumber').textContent = Math.floor(gameState.elixir);
+                }
+
+                // Timer countdown
+                gameState.timeLeft -= dt;
+                if (gameState.timeLeft <= 0) {
+                    gameState.timeLeft = 0;
+                    endGameByTime();
+                } else {
+                    const mins = Math.floor(gameState.timeLeft / 60);
+                    const secs = Math.floor(gameState.timeLeft % 60);
+                    document.getElementById('gameTimer').textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+                }
+
+                updateAI(dt);
+                updateTroops(dt);
+                updateTowers(dt);
+                updateProjectiles(dt);
+            }
+
+            renderArena();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function updateTroops(dt) {
+            troops.forEach(troop => {
+                // Find nearest enemy (troop or tower)
+                let nearestTarget = null;
+                let minDist = Infinity;
+
+                // Check enemy towers
+                towers.forEach(t => {
+                    if (t.team !== troop.team && t.alive) {
+                        const dist = Math.hypot(t.x - troop.x, t.y - troop.y);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            nearestTarget = t;
+                        }
+                    }
+                });
+
+                // Check enemy troops
+                troops.forEach(ot => {
+                    if (ot.team !== troop.team) {
+                        const dist = Math.hypot(ot.x - troop.x, ot.y - troop.y);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            nearestTarget = ot;
+                        }
+                    }
+                });
+
+                if (nearestTarget) {
+                    // Check if in attack range
+                    if (minDist <= troop.range) {
+                        // Attack
+                        const now = performance.now();
+                        if (!troop.lastAtk || now - troop.lastAtk > 1000) {
+                            troop.lastAtk = now;
+                            nearestTarget.hp -= troop.atk;
+                            playSound('hit');
+
+                            // Create hit particle
+                            particles.push({
+                                x: nearestTarget.x,
+                                y: nearestTarget.y,
+                                vx: (Math.random() - 0.5) * 3,
+                                vy: (Math.random() - 0.5) * 3,
+                                color: '#facc15',
+                                alpha: 1,
+                                size: 5
+                            });
+
+                            if (nearestTarget.hp <= 0 && nearestTarget.maxHp) {
+                                // Tower destroyed
+                                nearestTarget.alive = false;
+                                if (nearestTarget.team === 'player') {
+                                    gameState.enemyCrowns++;
+                                    if (nearestTarget.type === 'king') triggerGameOver('defeat');
+                                } else {
+                                    gameState.playerCrowns++;
+                                    if (nearestTarget.type === 'king') triggerGameOver('victory');
+                                }
+                            }
+                        }
+                    } else {
+                        // Move towards target
+                        const angle = Math.atan2(nearestTarget.y - troop.y, nearestTarget.x - troop.x);
+                        troop.x += Math.cos(angle) * troop.speed * dt * 30;
+                        troop.y += Math.sin(angle) * troop.speed * dt * 30;
+                    }
+                }
+            });
+
+            // Filter dead troops
+            troops = troops.filter(t => t.hp > 0);
+        }
+
+        function updateTowers(dt) {
+            towers.forEach(tower => {
+                if (!tower.alive) return;
+
+                // Find nearest enemy troop
+                let nearestTroop = null;
+                let minDist = tower.range;
+
+                troops.forEach(troop => {
+                    if (troop.team !== tower.team) {
+                        const dist = Math.hypot(troop.x - tower.x, troop.y - tower.y);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            nearestTroop = troop;
+                        }
+                    }
+                });
+
+                if (nearestTroop) {
+                    const now = performance.now();
+                    if (now - tower.lastShot > (1000 / tower.atkSpeed)) {
+                        tower.lastShot = now;
+                        projectiles.push({
+                            x: tower.x,
+                            y: tower.y,
+                            targetX: nearestTroop.x,
+                            targetY: nearestTroop.y,
+                            targetTroop: nearestTroop,
+                            speed: 8,
+                            atk: tower.atk,
+                            team: tower.team
+                        });
+                        playSound('hit');
+                    }
+                }
+            });
+        }
+
+        function updateProjectiles(dt) {
+            projectiles.forEach(p => {
+                if (p.targetTroop && p.targetTroop.hp > 0) {
+                    p.targetX = p.targetTroop.x;
+                    p.targetY = p.targetTroop.y;
+                }
+                const angle = Math.atan2(p.targetY - p.y, p.targetX - p.x);
+                p.x += Math.cos(angle) * p.speed * 4;
+                p.y += Math.sin(angle) * p.speed * 4;
+
+                const dist = Math.hypot(p.targetX - p.x, p.targetY - p.y);
+                if (dist < 10) {
+                    if (p.targetTroop) {
+                        p.targetTroop.hp -= p.atk;
+                    }
+                    p.dead = true;
+                }
+            });
+            projectiles = projectiles.filter(p => !p.dead);
+        }
+
+        function renderArena() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Grass Field Background
+            ctx.fillStyle = '#2d6a4f';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Decorative River across the middle (y: 330 to 390)
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillRect(0, 335, canvas.width, 50);
+            ctx.fillStyle = '#0284c7';
+            ctx.fillRect(0, 350, canvas.width, 20);
+
+            // Bridges across the river (Left bridge: x 100-160, Right bridge: x 320-380)
+            ctx.fillStyle = '#854d0e';
+            ctx.fillRect(100, 330, 60, 60);
+            ctx.fillRect(320, 330, 60, 60);
+            // Wooden plank lines
+            ctx.strokeStyle = '#451a03';
+            ctx.lineWidth = 2;
+            for(let i=105; i<155; i+=10) {
+                ctx.beginPath(); ctx.moveTo(i, 330); ctx.lineTo(i, 390); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(i+220, 330); ctx.lineTo(i+220, 390); ctx.stroke();
+            }
+
+            // Lane paths (dirt tracks)
+            ctx.fillStyle = '#a16207';
+            ctx.globalAlpha = 0.3;
+            ctx.fillRect(115, 80, 30, 600);
+            ctx.fillRect(335, 80, 30, 600);
+            ctx.globalAlpha = 1.0;
+
+            // 2. Render Towers
+            towers.forEach(tower => {
+                if (!tower.alive) return;
+                ctx.save();
+                ctx.translate(tower.x, tower.y);
+
+                // Tower base
+                ctx.fillStyle = tower.team === 'player' ? '#1d4ed8' : '#b91c1c';
+                ctx.beginPath();
+                ctx.arc(0, 0, tower.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#fef08a';
+                ctx.stroke();
+
+                // Tower icon / roof
+                ctx.fillStyle = '#0f172a';
+                ctx.beginPath();
+                ctx.arc(0, 0, tower.radius * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 14px Cinzel';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(tower.type === 'king' ? '👑' : '🏰', 0, 0);
+
+                // HP Bar
+                const barW = 40;
+                const barH = 6;
+                const hpPct = Math.max(0, tower.hp / tower.maxHp);
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.fillRect(-barW/2, -tower.radius - 14, barW, barH);
+                ctx.fillStyle = tower.team === 'player' ? '#22c55e' : '#ef4444';
+                ctx.fillRect(-barW/2, -tower.radius - 14, barW * hpPct, barH);
+
+                ctx.restore();
+            });
+
+            // 3. Render Troops
+            troops.forEach(troop => {
+                ctx.save();
+                ctx.translate(troop.x, troop.y);
+
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.4)';
+                ctx.beginPath();
+                ctx.ellipse(0, 12, 12, 6, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Body circle
+                ctx.fillStyle = troop.color;
+                ctx.beginPath();
+                ctx.arc(0, 0, troop.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = troop.team === 'player' ? '#93c5fd' : '#fca5a5';
+                ctx.stroke();
+
+                // Icon
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(troop.icon, 0, 0);
+
+                // Troop HP Bar
+                const barW = 30;
+                const barH = 4;
+                const hpPct = Math.max(0, troop.hp / troop.maxHp);
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.fillRect(-barW/2, -troop.radius - 10, barW, barH);
+                ctx.fillStyle = troop.team === 'player' ? '#22c55e' : '#ef4444';
+                ctx.fillRect(-barW/2, -troop.radius - 10, barW * hpPct, barH);
+
+                ctx.restore();
+            });
+
+            // 4. Render Projectiles
+            projectiles.forEach(p => {
+                ctx.fillStyle = p.team === 'player' ? '#38bdf8' : '#f87171';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // 5. Render Particles
+            particles.forEach(pt => {
+                pt.x += pt.vx;
+                pt.y += pt.vy;
+                pt.alpha -= 0.03;
+                ctx.fillStyle = pt.color;
+                ctx.globalAlpha = Math.max(0, pt.alpha);
+                ctx.beginPath();
+                ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            });
+            particles = particles.filter(pt => pt.alpha > 0);
+        }
+
+        function triggerGameOver(result) {
+            if (gameState.gameOver) return;
+            gameState.gameOver = true;
+            playSound('victory');
+
+            const modal = document.getElementById('gameOverModal');
+            const title = document.getElementById('modalTitle');
+            const subtitle = document.getElementById('modalSubtitle');
+            const crowns = document.getElementById('modalCrowns');
+            const icon = document.getElementById('modalCrownIcon');
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+
+            if (result === 'victory') {
+                title.textContent = "VICTORY!";
+                title.className = "text-2xl font-black cinzel-font text-amber-400 mb-1";
+                subtitle.textContent = "You destroyed the enemy King Tower!";
+                icon.textContent = "👑";
+            } else {
+                title.textContent = "DEFEAT";
+                title.className = "text-2xl font-black cinzel-font text-red-500 mb-1";
+                subtitle.textContent = "Your King Tower was destroyed!";
+                icon.textContent = "💀";
+            }
+
+            crowns.textContent = `${gameState.playerCrowns} - ${gameState.enemyCrowns}`;
+        }
+
+        function endGameByTime() {
+            if (gameState.playerCrowns > gameState.enemyCrowns) {
+                triggerGameOver('victory');
+            } else if (gameState.playerCrowns < gameState.enemyCrowns) {
+                triggerGameOver('defeat');
+            } else {
+                // Check total tower HP
+                let pHp = towers.filter(t=>t.team==='player').reduce((acc, t)=>acc+t.hp, 0);
+                let eHp = towers.filter(t=>t.team==='enemy').reduce((acc, t)=>acc+t.hp, 0);
+                if (pHp >= eHp) triggerGameOver('victory');
+                else triggerGameOver('defeat');
+            }
+        }
+
+        function resetGame() {
+            gameState.elixir = 5;
+            gameState.timeLeft = 180;
+            gameState.selectedCardIndex = null;
+            gameState.playerCrowns = 0;
+            gameState.enemyCrowns = 0;
+            gameState.gameOver = false;
+            troops = [];
+            projectiles = [];
+            particles = [];
+            initTowers();
+            document.getElementById('gameOverModal').classList.add('hidden');
+            document.getElementById('gameOverModal').classList.remove('flex');
+            renderCardsUI();
+        }
+
+        // Initialize on load
+        window.onload = function() {
+            initTowers();
+            renderCardsUI();
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
+
